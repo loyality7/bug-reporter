@@ -29,11 +29,13 @@ jobs:
       - name: Build and package
         run: npm run zip
 
-      # Downloadable from the run page, so a build can be shared without a release.
+      # upload-artifact skips anything inside a dot-directory by default, and the build
+      # output lives in `.output`, so hidden files have to be opted back in.
       - name: Upload extension
         uses: actions/upload-artifact@v4
         with:
           name: session-bug-reporter-${{ github.sha }}
           path: .output/*.zip
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 30
