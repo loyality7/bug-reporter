@@ -115,7 +115,12 @@ export default function GitHubPanel({ sessionId }: { sessionId: string }) {
         setStatus('No bugs in this session to push.');
         return;
       }
-      if (!confirm(`Create ${bundle.bugs.length} issue(s) in ${config.owner}/${config.repo}?`)) return;
+      const unfiled = bundle.bugs.filter((b) => !b.issue).length;
+      if (unfiled === 0) {
+        setStatus('Every bug in this session already has an issue.');
+        return;
+      }
+      if (!confirm(`Create ${unfiled} issue(s) in ${config.owner}/${config.repo}?`)) return;
       setResult(await pushIssues(bundle, config, setProgress));
     } catch (e) {
       setStatus(e instanceof Error ? e.message : String(e));

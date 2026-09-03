@@ -27,8 +27,14 @@ function selectRegion(): Promise<{ x: number; y: number; width: number; height: 
       <style>
         :host { all: initial; }
         .layer { position: fixed; inset: 0; cursor: crosshair; }
-        .dim { position: fixed; background: rgba(0,0,0,.45); }
-        .box { position: fixed; border: 2px solid #22c55e; box-shadow: 0 0 0 1px rgba(0,0,0,.35); }
+        .dim { position: fixed; background: rgba(15,17,21,.55); }
+        .box {
+          position: fixed; box-sizing: border-box;
+          /* Inset so the line sits inside the selection and leaves no bright sliver. */
+          border: 2px solid #22c55e;
+          box-shadow: inset 0 0 0 1px rgba(0,0,0,.45);
+        }
+
         .hint {
           position: fixed; left: 50%; top: 16px; transform: translateX(-50%);
           background: rgba(20,20,20,.92); color: #fff; padding: 6px 12px; border-radius: 6px;
@@ -54,19 +60,35 @@ function selectRegion(): Promise<{ x: number; y: number; width: number; height: 
 
     let sx = 0, sy = 0, dragging = false;
 
-    const rect = () => {
-      const r = box.getBoundingClientRect();
-      return { x: r.left, y: r.top, width: r.width, height: r.height };
-    };
+    // The selection in CSS pixels, kept as numbers rather than read back off the element:
+    // the box's outline is drawn outside its bounds, so getBoundingClientRect() would report
+    // a rect two pixels larger on every side.
+    let selection = { x: 0, y: 0, width: 0, height: 0 };
 
-    // Four dim panels around the selection leave the chosen area at full brightness.
+    /**
+     * Four dim panels around the selection leave the chosen area at full brightness.
+     *
+     * Each panel is pinned by all four edges. Mixing `width`/`height` with `right`/`bottom`
+     * previously left stale zero sizes behind, which collapsed the right and bottom panels
+     * and made only the top-left look dimmed.
+     */
     const paint = (x: number, y: number, w: number, h: number) => {
+      selection = { x, y, width: w, height: h };
       box.hidden = false;
       Object.assign(box.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${h}px` });
-      Object.assign(top.style, { left: '0', top: '0', width: '100%', height: `${y}px` });
-      Object.assign(bottom.style, { left: '0', top: `${y + h}px`, width: '100%', bottom: '0' });
-      Object.assign(left.style, { left: '0', top: `${y}px`, width: `${x}px`, height: `${h}px` });
-      Object.assign(right.style, { left: `${x + w}px`, top: `${y}px`, right: '0', height: `${h}px` });
+
+      const place = (el: HTMLElement, l: number, t: number, r: number, b: number) =>
+        Object.assign(el.style, {
+          left: `${l}px`, top: `${t}px`, right: `${r}px`, bottom: `${b}px`,
+          width: 'auto', height: 'auto',
+        });
+
+      const vw = innerWidth;
+      const vh = innerHeight;
+      place(top, 0, 0, 0, vh - y);
+      place(bottom, 0, y + h, 0, 0);
+      place(left, 0, y, vw - x, vh - (y + h));
+      place(right, x + w, y, 0, vh - (y + h));
       size.hidden = false;
       size.textContent = `${Math.round(w)}px × ${Math.round(h)}px`;
       // Follow the dragging corner; flip inside when the box runs off-screen.
@@ -75,9 +97,11 @@ function selectRegion(): Promise<{ x: number; y: number; width: number; height: 
       Object.assign(size.style, { left: `${sxPos}px`, top: `${syPos}px` });
     };
 
+    // Before any drag the whole page is dimmed by a single panel.
     const reset = () => {
-      Object.assign(top.style, { left: '0', top: '0', width: '100%', height: '100%' });
-      for (const d of [bottom, left, right] as HTMLElement[]) Object.assign(d.style, { width: '0', height: '0' });
+      Object.assign(top.style, { left: '0', top: '0', right: '0', bottom: '0', width: 'auto', height: 'auto' });
+      for (const d of [bottom, left, right] as HTMLElement[])
+        Object.assign(d.style, { left: '0', top: '0', right: '0', bottom: '100%', width: 'auto', height: 'auto' });
     };
     reset();
 
@@ -108,8 +132,7 @@ function selectRegion(): Promise<{ x: number; y: number; width: number; height: 
     host.addEventListener('pointerup', () => {
       if (!dragging) return;
       dragging = false;
-      const r = rect();
-      finish(r.width >= MIN_SIZE && r.height >= MIN_SIZE ? r : null);
+      finish(selection.width >= MIN_SIZE && selection.height >= MIN_SIZE ? selection : null);
     });
   });
 }

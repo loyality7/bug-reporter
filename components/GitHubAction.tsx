@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check } from 'lucide-react';
 import { loadConfig, loadAutoFile, pushOneIssue, type GitHubConfig } from '@/lib/github';
+import { db } from '@/lib/db';
 
 type Phase = 'unknown' | 'unconfigured' | 'ready' | 'pushing' | 'done' | 'failed';
 
@@ -32,11 +33,19 @@ export default function GitHubAction({
   const [issue, setIssue] = useState<{ number: number; url: string; imageWarning?: string } | null>(null);
 
   useEffect(() => {
-    loadConfig().then((c) => {
+    (async () => {
+      const c = await loadConfig();
       setConfig(c);
+      // A bug that already has an issue shows the link rather than offering to file again.
+      const existing = bugId ? (await db.bugs.get(bugId))?.issue : undefined;
+      if (existing) {
+        setIssue({ number: existing.number, url: existing.url });
+        setPhase('done');
+        return;
+      }
       setPhase(c ? 'ready' : 'unconfigured');
-    });
-  }, []);
+    })();
+  }, [bugId]);
 
   async function push() {
     if (!config || !bugId) return;
@@ -76,7 +85,7 @@ export default function GitHubAction({
       <div>
         <p className="inline-flex items-center gap-1.5 text-[11px] text-emerald-500">
           <Check size={12} strokeWidth={2.5} />
-          Created
+          Filed as
           <a href={issue.url} target="_blank" rel="noreferrer" className={`underline ${link}`}>
             #{issue.number}
           </a>

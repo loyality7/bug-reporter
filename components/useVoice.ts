@@ -11,12 +11,10 @@ import { useEffect, useRef, useState } from 'react';
 export type VoiceMode = 'idle' | 'listening' | 'failed';
 
 /**
- * Chrome's Web Speech API streams audio to Google's servers. Brave blocks that endpoint by
- * default, so recognition fails with `network` no matter which context it runs in. Detect
- * that specific case so the UI can tell the user how to turn it on instead of silently
- * handing them an audio file.
+ * Chrome's Web Speech API needs a Google speech key that Brave does not ship, so recognition
+ * there always fails with `network`. Detect that case so the UI can say so plainly rather
+ * than silently handing the user an audio file.
  */
-export const SPEECH_SETTINGS_URL = 'brave://settings/privacy';
 
 export interface SpeechBlocked {
   reason: 'network';
@@ -25,6 +23,13 @@ export interface SpeechBlocked {
 
 const isBrave = () =>
   typeof navigator !== 'undefined' && Boolean((navigator as any).brave?.isBrave);
+
+/**
+ * Whether dictation has already proved unusable in this browser. Recording audio is only
+ * worth doing as a fallback, so once speech is known to be dead the recorder starts with
+ * the first capture instead of running pointlessly behind every successful dictation.
+ */
+let speechKnownDead = isBrave();
 
 export interface VoiceState {
   supported: boolean;
@@ -96,17 +101,21 @@ export function useVoice(onTranscript: (text: string) => void): VoiceState {
       stream.current = media;
       chunks.current = [];
 
-      const rec = new MediaRecorder(media, { mimeType: pickMime() });
-      rec.ondataavailable = (e) => { if (e.data.size > 0) chunks.current.push(e.data); };
-      rec.onstop = () => {
-        // Keep the recording only when dictation gave us nothing usable.
-        if (!heardText.current) setAudio(new Blob(chunks.current, { type: rec.mimeType }));
-        chunks.current = [];
-        releaseMedia();
-        setMode('idle');
-      };
-      rec.start(1000);
-      recorder.current = rec;
+      // Only capture audio when dictation cannot deliver text. Where speech works the
+      // recording would be thrown away, so there is no reason to make it.
+      if (speechKnownDead) {
+        const rec = new MediaRecorder(media, { mimeType: pickMime() });
+        rec.ondataavailable = (e) => { if (e.data.size > 0) chunks.current.push(e.data); };
+        rec.onstop = () => {
+          if (!heardText.current) setAudio(new Blob(chunks.current, { type: rec.mimeType }));
+          chunks.current = [];
+          releaseMedia();
+          setMode('idle');
+        };
+        rec.start(1000);
+        recorder.current = rec;
+      }
+
       setMode('listening');
       timer.current = setInterval(() => setSeconds((s) => s + 1), 1000);
 
@@ -145,8 +154,12 @@ export function useVoice(onTranscript: (text: string) => void): VoiceState {
       rec.onerror = (e: any) => {
         sttFailed.current = true;
         if (e?.error === 'not-allowed') setError('Microphone permission denied.');
-        // `network` means the speech service is unreachable — usually Brave blocking it.
-        else if (e?.error === 'network') setBlocked({ reason: 'network', isBrave: isBrave() });
+        else if (e?.error === 'network') {
+          // The speech service is unreachable in this browser and will stay that way, so
+          // start recording audio from now on.
+          speechKnownDead = true;
+          setBlocked({ reason: 'network', isBrave: isBrave() });
+        }
       };
       recognition.current = rec;
       rec.start();
@@ -156,12 +169,20 @@ export function useVoice(onTranscript: (text: string) => void): VoiceState {
   }
 
   function stop() {
-    // Tell the user why they got an audio clip instead of text. A blocked speech service
-    // gets its own actionable message, rendered separately.
-    if (!heardText.current && !sttFailed.current)
-      setError('Nothing was heard. The audio was attached instead.');
+    // A blocked speech service gets its own actionable message, rendered separately.
+    if (!heardText.current && !sttFailed.current) setError('Nothing was heard.');
+    // First failure in a browser we assumed could dictate: nothing was recorded, so say
+    // that plainly. `speechKnownDead` is now set, so the next attempt keeps the audio.
+    else if (!heardText.current && sttFailed.current && !recorder.current)
+      setError('Dictation is unavailable here. Press the mic again to record a voice note instead.');
 
-    try { recorder.current?.stop(); } catch { releaseMedia(); setMode('idle'); }
+    // Nothing was recording when dictation was expected to work, so tear down directly.
+    if (!recorder.current) {
+      releaseMedia();
+      setMode('idle');
+      return;
+    }
+    try { recorder.current.stop(); } catch { releaseMedia(); setMode('idle'); }
   }
 
   return {

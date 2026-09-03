@@ -258,6 +258,8 @@ async function uploadImage(
 export interface PushResult {
   created: { bug: string; number: number; url: string }[];
   failed: { bug: string; error: string }[];
+  /** Bugs left alone because they already have an issue. */
+  skipped: { bug: string; number: number; url: string }[];
   /** Why screenshots were left out, when they were. */
   imageWarning?: string;
 }
@@ -277,12 +279,17 @@ export async function pushOneIssue(
   bugId: string,
   config: GitHubConfig,
   onProgress?: (message: string) => void,
-): Promise<{ number: number; url: string; imageWarning?: string } | { error: string }> {
+): Promise<
+  { number: number; url: string; imageWarning?: string; alreadyFiled?: boolean } | { error: string }
+> {
   const { db } = await import('./db');
   const bug = await db.bugs.get(bugId);
   if (!bug) return { error: 'That bug no longer exists.' };
   const session = await db.sessions.get(bug.sessionId);
   if (!session) return { error: 'That session no longer exists.' };
+
+  // Filing the same bug twice would create a duplicate issue.
+  if (bug.issue) return { number: bug.issue.number, url: bug.issue.url, alreadyFiled: true };
 
   const evidence = await db.evidence.where('bugId').equals(bugId).toArray();
   const bundle: SessionBundle = {
@@ -304,11 +311,17 @@ export async function pushIssues(
   config: GitHubConfig,
   onProgress?: (message: string) => void,
 ): Promise<PushResult> {
+  // Anything already filed is left alone; re-pushing a session must not duplicate issues.
+  const skipped = bundle.bugs
+    .filter((b) => b.issue)
+    .map((b) => ({ bug: b.title || bugLabel(b.seq), number: b.issue!.number, url: b.issue!.url }));
+  const pending = bundle.bugs.filter((b) => !b.issue);
+
   // Upload screenshots first so each issue body can link a real, renderable image.
   const images = new Map<string, string>();
   let imageWarning: string | undefined;
 
-  const withShots = bundle.bugs.filter((b) => bundle.screenshots.has(b.id));
+  const withShots = pending.filter((b) => bundle.screenshots.has(b.id));
   if (withShots.length > 0) {
     const branch = await ensureImageBranch(config);
     if (!branch.ok) {
@@ -331,8 +344,8 @@ export async function pushIssues(
     }
   }
 
-  const payloads = toGitHubIssues(bundle, images);
-  const result: PushResult = { created: [], failed: [], imageWarning };
+  const payloads = toGitHubIssues({ ...bundle, bugs: pending }, images);
+  const result: PushResult = { created: [], failed: [], skipped, imageWarning };
 
   for (const [i, payload] of payloads.entries()) {
     try {
@@ -346,6 +359,16 @@ export async function pushIssues(
       if (res.ok) {
         const issue = await res.json();
         result.created.push({ bug: payload.title, number: issue.number, url: issue.html_url });
+        // Record it on the bug so a later push skips this one.
+        const filed = pending[i];
+        if (filed) {
+          const { db } = await import('./db');
+          await db.bugs
+            .update(filed.id, {
+              issue: { number: issue.number, url: issue.html_url, filedAt: Date.now() },
+            })
+            .catch(() => {});
+        }
       } else {
         const detail = await res.text();
         result.failed.push({

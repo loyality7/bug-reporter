@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, bugLabel, deleteBug, deleteSession, finishSession, type Bug, type BugStatus, type Severity } from '@/lib/db';
+import { db, bugLabel, deleteBug, deleteSession, finishSession, resumeSession, type Bug, type BugStatus, type Severity } from '@/lib/db';
 import { Image, Mic, Terminal, Network, Search } from 'lucide-react';
 import { Button, useBlobUrl, fmtDate, fmtBytes, Badge, EmptyState } from '@/components/ui';
 import { Select } from '@/components/Select';
@@ -73,6 +73,23 @@ export default function Dashboard() {
           <div className="ml-auto flex gap-2">
             {session && !session.endedAt && (
               <Button variant="secondary" size="sm" onClick={() => finishSession(session.id)}>Finish session</Button>
+            )}
+            {session?.endedAt && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={async () => {
+                  const active = await db.sessions.filter((s) => s.endedAt === null).first();
+                  if (
+                    active &&
+                    !confirm(`Resuming this will finish "${active.name}", which is currently active. Continue?`)
+                  )
+                    return;
+                  await resumeSession(session.id);
+                }}
+              >
+                Resume session
+              </Button>
             )}
             {session && (
               <Button
@@ -252,6 +269,18 @@ function Row({ bug, onOpen }: { bug: Bug; onOpen: () => void }) {
           )}
           {bug.network.some((n) => n.failed) && (
             <Network size={14} strokeWidth={2} className="text-red-500" aria-label="Failed requests" />
+          )}
+          {bug.issue && (
+            <a
+              href={bug.issue.url}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="font-mono text-[11px] text-blue-600 hover:underline"
+              title="Already filed on GitHub"
+            >
+              #{bug.issue.number}
+            </a>
           )}
         </span>
       </td>

@@ -57,6 +57,8 @@ export interface Bug {
   console: ConsoleEntry[];
   network: NetworkEntry[];
   steps: StepEntry[];
+  /** Set once filed to GitHub, so a second push does not duplicate the issue. */
+  issue?: { number: number; url: string; filedAt: number };
 }
 
 export type EvidenceKind = 'screenshot' | 'video' | 'audio';
@@ -138,6 +140,18 @@ export async function startSession(name: string): Promise<Session> {
 export const activeSession = () => db.sessions.filter((s) => s.endedAt === null).first();
 
 export const finishSession = (id: string) => db.sessions.update(id, { endedAt: Date.now() });
+
+/**
+ * Reopens a finished session so more bugs can be added to it. Only one session may be
+ * active, so any other open session is closed first — the same rule startSession follows.
+ */
+export async function resumeSession(id: string): Promise<void> {
+  await db.transaction('rw', db.sessions, async () => {
+    const open = await db.sessions.filter((s) => s.endedAt === null && s.id !== id).toArray();
+    await Promise.all(open.map((s) => db.sessions.update(s.id, { endedAt: Date.now() })));
+    await db.sessions.update(id, { endedAt: null });
+  });
+}
 
 export async function deleteSession(id: string) {
   await db.transaction('rw', db.sessions, db.bugs, db.evidence, async () => {

@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, dbError, startSession, finishSession, type Session } from '@/lib/db';
+import { db, dbError, startSession, finishSession, resumeSession, type Session } from '@/lib/db';
 import type { CaptureArea, CaptureMode } from '@/lib/startCapture';
-import { Crop, Monitor, ScrollText, LayoutGrid, CircleCheck } from 'lucide-react';
+import { Crop, Monitor, ScrollText, LayoutGrid, CircleCheck, RotateCcw } from 'lucide-react';
 import { Button, Input, fmtTime } from '@/components/ui';
 
 const AREAS: { id: CaptureArea; label: string; hint: string; Icon: typeof Crop }[] = [
@@ -72,13 +72,21 @@ function Home({ recent }: { recent: Session[] }) {
           <h2 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">Recent sessions</h2>
           <ul className="mt-2 space-y-1">
             {recent.map((s) => (
-              <li key={s.id}>
+              <li key={s.id} className="group flex items-center gap-1 rounded-md hover:bg-neutral-100">
                 <button
                   onClick={() => openDashboard(s.id)}
-                  className="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-neutral-100"
+                  className="flex min-w-0 flex-1 items-center justify-between px-2 py-2 text-left text-sm"
                 >
                   <span className="truncate">{s.name}</span>
                   <span className="ml-2 shrink-0 text-xs tabular-nums text-neutral-500">{counts[s.id] ?? 0}</span>
+                </button>
+                <button
+                  onClick={() => resumeSession(s.id)}
+                  title="Continue adding bugs to this session"
+                  aria-label={`Resume ${s.name}`}
+                  className="mr-1 grid h-7 w-7 shrink-0 place-items-center rounded text-neutral-400 opacity-0 transition hover:bg-neutral-200 hover:text-neutral-900 group-hover:opacity-100"
+                >
+                  <RotateCcw size={13} strokeWidth={2} />
                 </button>
               </li>
             ))}

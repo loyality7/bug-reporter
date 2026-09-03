@@ -35,6 +35,9 @@ const bug = (seq: number, over: Partial<Bug> = {}): Bug => ({
   ...over,
 });
 
+// A bug that has already been filed carries its issue reference.
+const alreadyFiled = bug(5, { title: 'Filed twice?', issue: { number: 9, url: 'https://x.test/9', filedAt: 1 } });
+
 const withEvidence = bug(4, {
   title: 'Add to cart fails',
   severity: 'critical',

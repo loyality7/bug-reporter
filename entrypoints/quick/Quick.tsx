@@ -27,6 +27,8 @@ export default function Quick() {
   const [severity, setSeverity] = useState<Severity>('medium');
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Quick capture has one field. Dictation and typing both feed it, and it is saved as
+  // both the title and the description so issues never read "No description".
   const voice = useVoice((text) => setTitle((t) => (t ? `${t} ${text}` : text)));
 
   useEffect(() => {
@@ -61,7 +63,7 @@ export default function Quick() {
         {
           sessionId: capture.sessionId,
           title: title.trim(),
-          description: '',
+          description: title.trim(),
           status: 'open',
           severity,
           tags: [],
@@ -125,13 +127,14 @@ export default function Quick() {
       )}
 
       <div className="mt-3 flex gap-2">
-        <input
+        <textarea
           autoFocus
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) save(); }}
-          placeholder="What broke?"
-          className="min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm text-neutral-100 placeholder:text-neutral-500 outline-none transition-colors focus:border-neutral-500"
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(); } }}
+          rows={title.length > 60 ? 3 : 1}
+          placeholder="What broke? (Enter to log, Shift+Enter for a new line)"
+          className="min-w-0 flex-1 resize-none rounded-md border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm leading-relaxed text-neutral-100 placeholder:text-neutral-500 outline-none transition-colors focus:border-neutral-500"
         />
         {voice.supported && (
           <button
@@ -153,7 +156,6 @@ export default function Quick() {
         <p className="mt-1.5 flex items-center gap-1.5 px-1 text-[11px] text-red-400">
           <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" />
           Listening {fmtDuration(voice.seconds)}
-          {voice.gotText && <span className="text-neutral-500">· transcribing</span>}
         </p>
       )}
       {voice.audio && !voice.active && <AudioNote voice={voice} />}
