@@ -1,0 +1,41 @@
+name: Release
+
+# Tag a version to publish an installable zip:
+#   npm version patch && git push --follow-tags
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npm run compile
+      - run: npm test
+      - run: npm run zip
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: .output/*.zip
+          generate_release_notes: true
+          body: |
+            ## Install
+
+            1. Download and unzip the file below, keeping the folder somewhere permanent
+            2. Open `chrome://extensions` (Brave: `brave://extensions`, Edge: `edge://extensions`)
+            3. Turn on **Developer mode**
+            4. Click **Load unpacked** and select the unzipped folder
+
+            See [INSTALL.md](INSTALL.md) for what it does and how to use it.

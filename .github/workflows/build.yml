@@ -1,0 +1,39 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Lets a build be kicked off by hand from the Actions tab.
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run compile
+
+      - name: Test
+        run: npm test
+
+      - name: Build and package
+        run: npm run zip
+
+      # Downloadable from the run page, so a build can be shared without a release.
+      - name: Upload extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-bug-reporter-${{ github.sha }}
+          path: .output/*.zip
+          if-no-files-found: error
+          retention-days: 30
